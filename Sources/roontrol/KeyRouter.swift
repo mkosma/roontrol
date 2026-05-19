@@ -19,9 +19,11 @@ import CoreGraphics
 ///     - Ctrl modifier  : preset (instant jump)
 ///   (fn is unusable as a modifier here: many keyboards set the fn flag
 ///   automatically on F13+ so it can't be distinguished from "no modifier".)
-/// - Consumer keys (bare mute, vol+/-, etc.) are NOT intercepted; macOS
-///   handles them locally. `mediaremoted` claims them before any public
-///   CGEventTap can see them on macOS 13+. Use fn+F10/F11/F12 instead.
+/// - Consumer keys are not seen here directly (`mediaremoted` claims them
+///   on macOS 13+ before any public CGEventTap). The Karabiner rule remaps
+///   the external keyboard's volume/mute keys to F10/F11/F12 below
+///   `mediaremoted`, so they arrive at this tap as plain f-key keyDowns.
+///   Built-in keyboard media keys are excluded and still drive macOS.
 ///
 /// All routing goes through roon-bridge over HTTP.
 /// No direct Roon Core connection from mbp.

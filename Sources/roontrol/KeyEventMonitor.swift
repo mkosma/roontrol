@@ -3,12 +3,14 @@ import CoreGraphics
 
 /// KeyEventMonitor: intercepts F10-F19 keyDown events.
 ///
-/// One CGEventTap at `.cghidEventTap` for keyDown events. Bare media keys
-/// (consumer page 12: mute, vol+/-, play/pause, next/prev) are NOT
-/// intercepted; on macOS 13+ `mediaremoted` claims those before any public
-/// CGEventTap can see them. To control Roon volume, use fn+F10/F11/F12 on
-/// the MacBook keyboard — that produces regular F-key keyDown events that
-/// this tap handles cleanly. F13-F19 remain the preset shortcuts.
+/// One CGEventTap at `.cghidEventTap` for keyDown events. Consumer media
+/// keys (page 12: mute, vol+/-) cannot be intercepted here directly: on
+/// macOS 13+ `mediaremoted` claims them before any public CGEventTap can
+/// see them. A Karabiner rule (HID layer, below `mediaremoted`) remaps the
+/// external keyboard's volume/mute keys to bare F10/F11/F12 keyDown events,
+/// which this tap then consumes and routes. F13-F19 are the preset
+/// shortcuts. See roontrol CLAUDE.md "Key constraints" for the Karabiner
+/// rule details.
 ///
 /// The tap returns nil to consume the event when routed; otherwise passes
 /// it through unchanged. Requires Accessibility permission.
