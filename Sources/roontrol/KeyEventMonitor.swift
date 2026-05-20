@@ -3,14 +3,13 @@ import CoreGraphics
 
 /// KeyEventMonitor: intercepts F10-F19 keyDown events.
 ///
-/// One CGEventTap at `.cghidEventTap` for keyDown events. Consumer media
-/// keys (page 12: mute, vol+/-) cannot be intercepted here directly: on
-/// macOS 13+ `mediaremoted` claims them before any public CGEventTap can
-/// see them. A Karabiner rule (HID layer, below `mediaremoted`) remaps the
-/// external keyboard's volume/mute keys to bare F10/F11/F12 keyDown events,
-/// which this tap then consumes and routes. F13-F19 are the preset
-/// shortcuts. See roontrol CLAUDE.md "Key constraints" for the Karabiner
-/// rule details.
+/// One CGEventTap at `.cghidEventTap` for keyDown events. Real media keys
+/// travel as `NSSystemDefined` events, not keyDown, so this tap never sees
+/// them: a bare volume key with default macOS behavior goes to the system.
+/// roontrol acts only on keyboards that deliver F10-F19 as real keyDown
+/// keycodes. On mbp the external keyboard is configured (Karabiner) to do
+/// that; the internal keyboard keeps native media keys. F10-F12 = volume,
+/// F13-F19 = presets. See roontrol CLAUDE.md "Key constraints".
 ///
 /// The tap returns nil to consume the event when routed; otherwise passes
 /// it through unchanged. Requires Accessibility permission.

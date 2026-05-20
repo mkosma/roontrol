@@ -8,9 +8,8 @@ import CoreGraphics
 /// event pass through.
 ///
 /// Modifier semantics:
-/// - F10/F11/F12 (Karabiner remaps the external keyboard's media keys
-///   to these F-key keycodes, bypassing the consumer-page path; bare
-///   MacBook keyboard media keys still hit the system, not us):
+/// - F10/F11/F12 (the external keyboard is configured to deliver these as
+///   real keyDown keycodes; the internal keyboard keeps native media keys):
 ///     - F10            : mute toggle (instant)
 ///     - F11            : volume down (instant, -1)
 ///     - F12            : volume up   (instant, +1)
@@ -19,11 +18,10 @@ import CoreGraphics
 ///     - Ctrl modifier  : preset (instant jump)
 ///   (fn is unusable as a modifier here: many keyboards set the fn flag
 ///   automatically on F13+ so it can't be distinguished from "no modifier".)
-/// - Consumer keys are not seen here directly (`mediaremoted` claims them
-///   on macOS 13+ before any public CGEventTap). The Karabiner rule remaps
-///   the external keyboard's volume/mute keys to F10/F11/F12 below
-///   `mediaremoted`, so they arrive at this tap as plain f-key keyDowns.
-///   Built-in keyboard media keys are excluded and still drive macOS.
+/// - Real media keys travel as `NSSystemDefined` events, which the keyDown
+///   tap never sees. roontrol only ever receives F-key keyDowns. The
+///   internal keyboard's native media keys are thus untouched and still
+///   drive macOS system volume.
 ///
 /// All routing goes through roon-bridge over HTTP.
 /// No direct Roon Core connection from mbp.

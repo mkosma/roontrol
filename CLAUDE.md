@@ -7,15 +7,18 @@ them to roon-bridge over HTTP. arm64, macOS 13+, no dock icon (LSUIElement).
 
 ## Key constraints
 
-- **Karabiner does the media-key capture; roontrol's CGEventTap does the
-  routing.** On macOS 13+ `mediaremoted` claims consumer media keys before
-  any public CGEventTap can see them. Karabiner's HID driver sits *below*
-  `mediaremoted`, so a Karabiner rule on non-built-in keyboards remaps the
-  volume/mute keys (in BOTH consumer and f-key form) to bare F10/F11/F12
-  before macOS acts. roontrol's CGEventTap then consumes those f-keys and
-  routes to roon-bridge. The rule lives at `~/.config/karabiner/karabiner.json`
-  (description starts "roontrol:"); it is NOT yet tracked in a repo.
-  Without it, external-keyboard volume keys leak to macOS system volume.
+- **roontrol's tap only sees `keyDown`, never media events.** Real volume/mute
+  keys travel as `NSSystemDefined` events; the CGEventTap masks `keyDown` only.
+  So roontrol acts only on keyboards that deliver F10-F19 as real `keyDown`
+  keycodes. On mbp the external keyboard is configured (Karabiner) to emit
+  F10/F11/F12 keycodes; the internal keyboard keeps native media keys, so
+  fn+F-key there is the deliberate macOS-system-volume escape hatch. `fnState=1`
+  (standard function keys) is set.
+- **Dell DDPM must not double-fire F-keys.** If Dell Display and Peripheral
+  Manager is installed, its setting "Enable Fn and media key behavior" must
+  stay UNCHECKED. Checked, it makes every F-key fire the media function AND
+  the f-key, so F11 drops macOS system volume in lockstep with Roon. This
+  cost a multi-hour misdiagnosis on 2026-05-19.
 - **mbp talks ONLY to roon-bridge via HTTP.** No direct Roon Core connection.
 - **No local config on mbp.** All settings live in roon-bridge's config.json. Sole exception: `BRIDGE_AUTH_TOKEN` lives in roontrol's LaunchAgent plist EnvironmentVariables (mirrors how roon-bridge stores its own copy). Repo-tracked source: `launchd/com.roontrol.plist`. Rotation requires editing both the bridge plist and this one.
 - **No em dashes** in any output (code comments, commit messages, docs).
