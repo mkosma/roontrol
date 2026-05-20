@@ -1,18 +1,22 @@
 import AppKit
 import CoreGraphics
 
-/// KeyEventMonitor: intercepts F10-F19 keyDown events.
+/// KeyEventMonitor: intercepts F-keys and transport media keys.
 ///
-/// One CGEventTap at `.cghidEventTap` for keyDown events. Real media keys
-/// travel as `NSSystemDefined` events, not keyDown, so this tap never sees
-/// them: a bare volume key with default macOS behavior goes to the system.
-/// roontrol acts only on keyboards that deliver F10-F19 as real keyDown
-/// keycodes. On mbp the external keyboard is configured (Karabiner) to do
-/// that; the internal keyboard keeps native media keys. F10-F12 = volume,
-/// F13-F19 = presets. See roontrol CLAUDE.md "Key constraints".
+/// Two CGEventTaps, both at `.cghidEventTap`:
+///  - keyDown tap for F10-F19. roontrol acts only on keyboards that
+///    deliver these as real keyDown keycodes. On mbp the external keyboard
+///    is configured (Karabiner) to do that; the internal keyboard keeps
+///    native media keys. F10-F12 = volume, F13-F19 = presets.
+///  - NSSystemDefined tap for the transport media keys (previous /
+///    play-pause / next, F7-F9 on a Mac keyboard). These arrive as
+///    aux-control events, never as keyDown. roontrol consumes only the
+///    transport keys and routes them to Roon; volume/mute media keys pass
+///    through untouched and still drive macOS system volume.
+/// See roontrol CLAUDE.md "Key constraints".
 ///
-/// The tap returns nil to consume the event when routed; otherwise passes
-/// it through unchanged. Requires Accessibility permission.
+/// A tap returns nil to consume an event when routed; otherwise passes it
+/// through unchanged. Both taps require Accessibility permission.
 ///
 /// At-home detection: the tap callbacks read a non-isolated Bool flag
 /// (atHomeFlag) which is updated from the main actor via NetworkProfile.
@@ -33,6 +37,8 @@ public class KeyEventMonitor {
     // fire, and stop() runs at terminate after all callbacks have drained.
     nonisolated(unsafe) fileprivate var functionTap: CFMachPort?
     nonisolated(unsafe) fileprivate var functionRunLoopSource: CFRunLoopSource?
+    nonisolated(unsafe) fileprivate var mediaTap: CFMachPort?
+    nonisolated(unsafe) fileprivate var mediaRunLoopSource: CFRunLoopSource?
 
     public init(bridgeClient: RoonBridgeClient, networkProfile: NetworkProfile) {
         self.bridgeClient = bridgeClient
@@ -48,10 +54,12 @@ public class KeyEventMonitor {
         }
 
         setupFunctionKeyTap()
+        setupMediaKeyTap()
     }
 
     public func stop() {
         teardownTap(&functionTap, &functionRunLoopSource)
+        teardownTap(&mediaTap, &mediaRunLoopSource)
     }
 
     private func teardownTap(_ tap: inout CFMachPort?, _ source: inout CFRunLoopSource?) {
@@ -91,6 +99,36 @@ public class KeyEventMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         NSLog("[KeyEventMonitor] Function key tap installed at cghidEventTap")
+    }
+
+    // -------------------------------------------------------------------------
+    // Media key tap (NSSystemDefined transport keys)
+    // -------------------------------------------------------------------------
+
+    private func setupMediaKeyTap() {
+        // NSSystemDefined == CGEventType raw value 14; CGEventType has no
+        // named case for it.
+        let eventMask = CGEventMask(1 << 14)
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+
+        guard let tap = CGEvent.tapCreate(
+            tap: .cghidEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: eventMask,
+            callback: mediaKeyTapCallback,
+            userInfo: selfPtr
+        ) else {
+            NSLog("[KeyEventMonitor] Could not create media key tap -- is Accessibility permission granted?")
+            return
+        }
+
+        self.mediaTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        self.mediaRunLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        NSLog("[KeyEventMonitor] Media key tap installed at cghidEventTap")
     }
 }
 
@@ -144,6 +182,86 @@ private func functionKeyTapCallback(
     }
 
     return nil // consume so the foreground app doesn't also receive F13...
+}
+
+// -------------------------------------------------------------------------
+// CGEventTap callback for NSSystemDefined transport media keys
+// -------------------------------------------------------------------------
+
+private func mediaKeyTapCallback(
+    proxy: CGEventTapProxy,
+    type: CGEventType,
+    event: CGEvent,
+    refcon: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard let refcon else { return Unmanaged.passRetained(event) }
+    let monitor = Unmanaged<KeyEventMonitor>.fromOpaque(refcon).takeUnretainedValue()
+
+    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        if let tap = monitor.mediaTap {
+            CGEvent.tapEnable(tap: tap, enable: true)
+            NSLog("[KeyEventMonitor] media tap re-enabled after \(type.rawValue)")
+        }
+        return Unmanaged.passRetained(event)
+    }
+
+    // Decode the aux-control event. A nil action means it is not a
+    // transport key (volume, mute, brightness, ...) -- leave it untouched.
+    guard let nsEvent = NSEvent(cgEvent: event),
+          let mediaKey = MediaKeyEvent.decode(
+              subtype: Int(nsEvent.subtype.rawValue),
+              data1: nsEvent.data1
+          ),
+          let action = KeyRouter.transportActionForMediaKey(mediaKey.keyCode)
+    else {
+        return Unmanaged.passRetained(event)
+    }
+
+    // Away from home: leave transport keys to macOS Now Playing routing.
+    guard monitor.atHomeFlag else {
+        return Unmanaged.passRetained(event)
+    }
+
+    // Ours. Route the down edge to Roon; consume both edges so neither
+    // the foreground app nor macOS Now Playing also reacts to the key.
+    if mediaKey.isDown {
+        NSLog("[KeyEventMonitor] routing transport media key: \(action.rawValue)")
+        DispatchQueue.main.async {
+            monitor.keyRouter.routeTransport(action)
+        }
+    }
+    return nil
+}
+
+// -------------------------------------------------------------------------
+// MediaKeyEvent: decode an NSSystemDefined aux-control button event
+// -------------------------------------------------------------------------
+
+/// A decoded NSSystemDefined aux-control event -- the media keys (play,
+/// next, previous, volume, mute, ...). roontrol acts only on the transport
+/// keys; it still decodes the rest so the tap knows what to pass through.
+struct MediaKeyEvent: Equatable {
+    /// NX_KEYTYPE_* code. 16 = play/pause, 17 = next, 18 = previous.
+    let keyCode: Int
+    /// True on the key-down edge, false on key-up.
+    let isDown: Bool
+
+    /// NX_SUBTYPE_AUX_CONTROL_BUTTONS -- the systemDefined subtype that
+    /// carries media keys. Other subtypes (power key, etc.) are not ours.
+    static let auxControlSubtype = 8
+
+    /// Decodes an NSSystemDefined event's subtype and `data1` field.
+    /// Returns nil if the event is not an aux-control button.
+    ///
+    /// `data1` layout for aux-control buttons:
+    ///   bits 16-31 : key code (NX_KEYTYPE_*)
+    ///   bits 8-15  : key state (0xA = down, 0xB = up)
+    static func decode(subtype: Int, data1: Int) -> MediaKeyEvent? {
+        guard subtype == auxControlSubtype else { return nil }
+        let keyCode = (data1 & 0xFFFF_0000) >> 16
+        let keyState = (data1 & 0x0000_FF00) >> 8
+        return MediaKeyEvent(keyCode: keyCode, isDown: keyState == 0xA)
+    }
 }
 
 // -------------------------------------------------------------------------

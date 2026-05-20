@@ -18,10 +18,11 @@ import CoreGraphics
 ///     - Ctrl modifier  : preset (instant jump)
 ///   (fn is unusable as a modifier here: many keyboards set the fn flag
 ///   automatically on F13+ so it can't be distinguished from "no modifier".)
-/// - Real media keys travel as `NSSystemDefined` events, which the keyDown
-///   tap never sees. roontrol only ever receives F-key keyDowns. The
-///   internal keyboard's native media keys are thus untouched and still
-///   drive macOS system volume.
+/// - The transport media keys (previous / play-pause / next, F7-F9 on a
+///   Mac keyboard) arrive as `NSSystemDefined` aux-control events on a
+///   separate tap (see `KeyEventMonitor`); `routeTransport(_:)` sends them
+///   to Roon. Volume/mute media keys are left alone and still drive macOS
+///   system volume on keyboards that emit them.
 ///
 /// All routing goes through roon-bridge over HTTP.
 /// No direct Roon Core connection from mbp.
@@ -83,6 +84,35 @@ public class KeyRouter {
         }
 
         return true
+    }
+
+    // -------------------------------------------------------------------------
+    // Route a transport media key (NSSystemDefined aux-control event)
+    // -------------------------------------------------------------------------
+
+    /// Maps an NX_KEYTYPE_* media keycode to a Roon transport action.
+    /// Covers both keyboard generations: the next/previous-track keys and
+    /// the older fast-forward/rewind keys both resolve to next/prev track.
+    /// Returns nil for media keys roontrol does not own (volume, mute, ...).
+    public nonisolated static func transportActionForMediaKey(_ keyCode: Int) -> TransportAction? {
+        switch keyCode {
+        case 16:     return .playpause  // NX_KEYTYPE_PLAY
+        case 17, 19: return .next       // NX_KEYTYPE_NEXT, NX_KEYTYPE_FAST
+        case 18, 20: return .prev       // NX_KEYTYPE_PREVIOUS, NX_KEYTYPE_REWIND
+        default:     return nil
+        }
+    }
+
+    /// Sends a transport action to Roon. Called when a transport media key
+    /// (previous, play/pause, next) is pressed and roontrol is at home.
+    public func routeTransport(_ action: TransportAction) {
+        Task {
+            do {
+                try await bridgeClient.transport(action: action)
+            } catch {
+                NSLog("[KeyRouter] Transport call failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private enum VolumeAction { case mute, down, up }

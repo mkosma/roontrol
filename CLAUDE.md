@@ -2,19 +2,26 @@
 
 ## What this is
 
-Swift menubar app (mbp) that intercepts F10-F19 keyDown events and routes
-them to roon-bridge over HTTP. arm64, macOS 13+, no dock icon (LSUIElement).
+Swift menubar app (mbp) that intercepts F-key and transport media-key
+events and routes them to roon-bridge over HTTP. arm64, macOS 13+, no dock
+icon (LSUIElement).
 
 ## Key constraints
 
-- **roontrol's tap only sees `keyDown`, never media events.** Real volume/mute
-  keys travel as `NSSystemDefined` events; the CGEventTap masks `keyDown` only.
-  So roontrol acts only on keyboards that deliver F10-F19 as real `keyDown`
-  keycodes. On mbp the external keyboard is configured (Karabiner) to emit
-  F10/F11/F12 keycodes, so its F10-F12 always route to Roon (fn is a no-op
-  there). The internal keyboard runs default macOS behavior (`fnState=0`):
-  bare F10-F12 are media keys that drive macOS system volume, and fn+F10-F12
-  are f-key keycodes that route to Roon. This split is deliberate.
+- **roontrol runs two CGEventTaps: a `keyDown` tap and an `NSSystemDefined`
+  media-key tap.** The `keyDown` tap handles F10-F19, so roontrol acts only on
+  keyboards that deliver F10-F19 as real `keyDown` keycodes. On mbp the
+  external keyboard is configured (Karabiner) to emit F10/F11/F12 keycodes, so
+  its F10-F12 always route to Roon (fn is a no-op there). The internal keyboard
+  runs default macOS behavior (`fnState=0`): bare F10-F12 are media keys that
+  drive macOS system volume, and fn+F10-F12 are f-key keycodes that route to
+  Roon. This split is deliberate.
+- **The media-key tap consumes only the transport keys** (previous /
+  play-pause / next, F7-F9). When roontrol is at home it routes them to Roon
+  transport and consumes the event so macOS Now Playing doesn't also react
+  (no more pausing YouTube by accident). Volume/mute media keys travel through
+  the same `NSSystemDefined` tap but pass through untouched, so they still
+  drive macOS system volume.
 - **Dell DDPM must not double-fire F-keys.** If Dell Display and Peripheral
   Manager is installed, its setting "Enable Fn and media key behavior" must
   stay UNCHECKED. Checked, it makes every F-key fire the media function AND
@@ -50,7 +57,7 @@ Tests live in `Tests/roontrolTests/`. No real Roon calls; MockURLProtocol interc
 Sources/roontrol/
   main.swift             -- entry point
   AppDelegate.swift      -- lifecycle, accessibility check
-  KeyEventMonitor.swift  -- CGEventTap for F10-F19 keyDown
+  KeyEventMonitor.swift  -- CGEventTaps: F10-F19 keyDown + transport media keys
   KeyRouter.swift        -- routing decisions (modifier logic, keycode mapping)
   RoonBridgeClient.swift -- URLSession HTTP client + Codable types
   BridgeDiscovery.swift  -- mDNS browser + fallback
@@ -60,5 +67,6 @@ Sources/roontrol/
 Tests/roontrolTests/
   NetworkProfileTests.swift   -- interface simulation
   KeyRouterTests.swift        -- keycode mapping, modifier routing
+  MediaKeyEventTests.swift    -- NSSystemDefined aux-control decoding
   RoonBridgeClientTests.swift -- encoding, error handling, MockURLProtocol
 ```

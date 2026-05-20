@@ -46,4 +46,28 @@ final class KeyRouterTests: XCTestCase {
         XCTAssertNil(KeyRouter.presetIndexForKeyCode(0))   // A
         XCTAssertNil(KeyRouter.presetIndexForKeyCode(122)) // F1
     }
+
+    // -------------------------------------------------------------------------
+    // Transport media key (NX_KEYTYPE_*) to TransportAction mapping
+    // -------------------------------------------------------------------------
+
+    func testPlayKeyMapsToPlaypause() {
+        XCTAssertEqual(KeyRouter.transportActionForMediaKey(16), .playpause)
+    }
+
+    func testNextAndFastKeysMapToNext() {
+        XCTAssertEqual(KeyRouter.transportActionForMediaKey(17), .next)  // NX_KEYTYPE_NEXT
+        XCTAssertEqual(KeyRouter.transportActionForMediaKey(19), .next)  // NX_KEYTYPE_FAST
+    }
+
+    func testPreviousAndRewindKeysMapToPrev() {
+        XCTAssertEqual(KeyRouter.transportActionForMediaKey(18), .prev)  // NX_KEYTYPE_PREVIOUS
+        XCTAssertEqual(KeyRouter.transportActionForMediaKey(20), .prev)  // NX_KEYTYPE_REWIND
+    }
+
+    func testNonTransportMediaKeysReturnNil() {
+        XCTAssertNil(KeyRouter.transportActionForMediaKey(0))  // NX_KEYTYPE_SOUND_UP
+        XCTAssertNil(KeyRouter.transportActionForMediaKey(1))  // NX_KEYTYPE_SOUND_DOWN
+        XCTAssertNil(KeyRouter.transportActionForMediaKey(7))  // NX_KEYTYPE_MUTE
+    }
 }
