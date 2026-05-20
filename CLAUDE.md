@@ -11,9 +11,10 @@ them to roon-bridge over HTTP. arm64, macOS 13+, no dock icon (LSUIElement).
   keys travel as `NSSystemDefined` events; the CGEventTap masks `keyDown` only.
   So roontrol acts only on keyboards that deliver F10-F19 as real `keyDown`
   keycodes. On mbp the external keyboard is configured (Karabiner) to emit
-  F10/F11/F12 keycodes; the internal keyboard keeps native media keys, so
-  fn+F-key there is the deliberate macOS-system-volume escape hatch. `fnState=1`
-  (standard function keys) is set.
+  F10/F11/F12 keycodes, so its F10-F12 always route to Roon (fn is a no-op
+  there). The internal keyboard runs default macOS behavior (`fnState=0`):
+  bare F10-F12 are media keys that drive macOS system volume, and fn+F10-F12
+  are f-key keycodes that route to Roon. This split is deliberate.
 - **Dell DDPM must not double-fire F-keys.** If Dell Display and Peripheral
   Manager is installed, its setting "Enable Fn and media key behavior" must
   stay UNCHECKED. Checked, it makes every F-key fire the media function AND
